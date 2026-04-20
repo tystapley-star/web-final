@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Star Wars Pixel Runner</title>
+<style>
+  body {
+    margin: 0; padding: 0; background: #000; color: #0f0;
+    font-family: 'Courier New', monospace; text-align: center;
+    overflow: hidden; /* Prevents scrollbars */
+  }
+  #menu, #gameOver {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.85); z-index: 10;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+  }
+  h1 { color: #ff0; text-shadow: 0 0 15px #ff0; margin: 10px; font-size: 50px;}
+  .characters { display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; margin: 20px; }
+  .char {
+    cursor: pointer; border: 3px solid #333; padding: 8px; border-radius: 8px; background: #111;
+    transition: transform 0.2s;
+  }
+  .char:hover, .char.selected { border-color: #0f0; transform: scale(1.15); box-shadow: 0 0 15px #0f03; }
+  
+  .btn-container { display: flex; gap: 20px; margin-top: 20px; }
+  
+  button {
+    padding: 12px 32px; font-size: 20px; font-weight: bold; font-family: inherit;
+    background: #111; color: #0f0; border: 2px solid #0f0; cursor: pointer;
+    text-transform: uppercase; transition: 0.2s;
+  }
+  button:hover { background: #0f0; color: #000; box-shadow: 0 0 15px #0f0; }
+  
+  .high-score { font-size: 22px; color: #ff0; margin-bottom: 10px; text-shadow: 0 0 5px #ff0; }
+  
+  /* Fullscreen adjustments */
+  #gameContainer { 
+    position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; margin: 0; 
+  }
+  canvas { 
+    width: 100%; height: 100%; display: block; 
+    image-rendering: pixelated; 
+    background: #05050a; 
+  }
+  #siteNav {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 12px 28px;
+  background: rgba(0, 0, 0, 0.6);
+  border-bottom: 1px solid #0f03;
+  backdrop-filter: blur(4px);
+}
+#siteNav ul {
+  list-style: none;
+  margin: 0; padding: 0;
+  display: flex;
+  gap: 8px;
+}
+#siteNav ul li a {
+  color: #0f0;
+  text-decoration: none;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  transition: all 0.2s;
+}
+#siteNav ul li a:hover {
+  border-color: #0f0;
+  color: #000;
+  background: #0f0;
+  box-shadow: 0 0 10px #0f0;
+}
+</style>
+</head>
+<body>
+  <nav id="siteNav">
+    <ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="resume.html">Resume</a></li>
+      <li><a href="projects.html">Projects</a></li>
+      <li><a href="contact.html">Contact</a></li>
+      <li><a href="#">App</a></li>
+      <li><a href="/scratch/liftsync.html">LiftSync</a></li>
+    </ul>
+  </nav>
+<div id="menu">
+  <h1>STAR WARS RUNNER</h1>
+  <div class="high-score" id="menuHighScore">HIGH SCORE: 0</div>
+  <p style="font-size: 20px; margin-bottom: 20px;">Choose your hero</p>
+  <div class="characters" id="charSelect"></div>
+  <button style="margin-top: 30px;" onclick="startGame()">START RUNNING</button>
+</div>
+
+<div id="gameContainer">
+  <canvas id="game"></canvas>
+</div>
+
+<div id="gameOver" style="display:none">
+  <h1 style="color: #f00; text-shadow: 0 0 15px #f00;">GAME OVER</h1>
+  <p id="finalScore" style="font-size: 32px; color: #fff; margin: 10px 0;"></p>
+  <div class="high-score" id="gameOverHighScore">HIGH SCORE: 0</div>
+  <div class="btn-container">
+    <button onclick="restartGame()">PLAY AGAIN</button>
+    <button onclick="goHome()">MAIN MENU</button>
+  </div>
+</div>
+
+<script>
+// ============== GAME VARIABLES ==============
+const canvas = document.getElementById('game');
+const mainCtx = canvas.getContext('2d');
+
+const H = 300; 
+let W = 800; 
+
+let currentChar = 0;
+let score = 0;
+let gameRunning = false;
+let obstacles = [];
+let lasers = [];
+let stars = [];
+let frame = 0;
+let speed = 5;
+
+// Load High Score from LocalStorage
+let highScore = localStorage.getItem('swRunnerHighScore') || 0;
+document.getElementById('menuHighScore').innerText = 'HIGH SCORE: ' + highScore;
+
+let player = {
+  x: 80, y: 180, width: 40, height: 48, dy: 0, jumping: false
+};
+
+const gravity = 1.0;
+const jumpPower = -17;
+const groundY = 180;
+
+const heroes = [
+  {name: "Luke", color: "#ddd", weapon: "saber", wColor: "#0f0"},
+  {name: "Leia", color: "#fff", weapon: "blaster", wColor: "#444"},
+  {name: "Han",  color: "#b85", weapon: "blaster", wColor: "#222"},
+  {name: "Anakin", color: "#222", weapon: "saber", wColor: "#00f"},
+  {name: "Yoda", color: "#0a0", weapon: "saber", wColor: "#0f0"}
+];
+
+function resizeCanvas() {
+  W = window.innerWidth * (H / window.innerHeight);
+  canvas.width = W;
+  canvas.height = H;
+  
+  stars = [];
+  let starCount = Math.floor(W / 12);
+  for(let i=0; i<starCount; i++) {
+    stars.push({
+      x: Math.random() * W, 
+      y: Math.random() * (H - 50), 
+      speed: Math.random() * 2 + 0.5,
+      size: Math.random() * 2 + 1
+    });
+  }
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas(); 
+
+function drawPlayer(ctx, charIndex, x, y, isRunning) {
+  const h = heroes[charIndex];
+  let leg1Offset = 0, leg2Offset = 0, bodyBob = 0;
+
+  if (isRunning) {
+    const cycle = Math.floor(frame / 6) % 4;
+    if (cycle === 0) { leg1Offset = 4; leg2Offset = -4; bodyBob = 2; }
+    else if (cycle === 1) { leg1Offset = 0; leg2Offset = 0; bodyBob = 0; }
+    else if (cycle === 2) { leg1Offset = -4; leg2Offset = 4; bodyBob = 2; }
+    else if (cycle === 3) { leg1Offset = 0; leg2Offset = 0; bodyBob = 0; }
+  } else if (player.jumping) {
+    leg1Offset = -4; leg2Offset = 4;
+  }
+
+  const bY = y + bodyBob;
+
+  ctx.fillStyle = h.color; ctx.fillRect(x+12, bY+10, 20, 25);        
+  ctx.fillStyle = "#fdb"; ctx.fillRect(x+15, bY+4, 14, 14);
+  
+  if (charIndex === 0) { ctx.fillStyle = "#db5"; ctx.fillRect(x+13, bY+4, 18, 8); } 
+  else if (charIndex === 1) { ctx.fillStyle = "#522"; ctx.fillRect(x+10, bY+6, 8, 8); ctx.fillRect(x+26, bY+6, 8, 8); } 
+  else if (charIndex === 2) { ctx.fillStyle = "#420"; ctx.fillRect(x+12, bY+4, 20, 10); } 
+  else if (charIndex === 3) { ctx.fillStyle = "#420"; ctx.fillRect(x+13, bY+3, 18, 12); } 
+  else { ctx.fillStyle = "#0a0"; ctx.fillRect(x+10, bY+2, 24, 12); ctx.fillStyle = "#080"; ctx.fillRect(x+8, bY+10, 8, 6); ctx.fillRect(x+28, bY+10, 8, 6); }
+  
+  ctx.fillStyle = "#222";
+  ctx.fillRect(x+14 + leg1Offset, y+32, 8, 14);
+  ctx.fillRect(x+22 + leg2Offset, y+32, 8, 14);
+  
+  if (h.weapon === "saber") { 
+    ctx.shadowBlur = 10; ctx.shadowColor = h.wColor; ctx.fillStyle = h.wColor;
+    ctx.fillRect(x + 32 + (isRunning ? leg2Offset/2 : 0), bY+5, 4, 25);
+    ctx.shadowBlur = 0; 
+  } else {
+    ctx.fillStyle = h.wColor; ctx.fillRect(x+32, bY+18, 14, 6);
+  }
+}
+
+function drawObstacle(ctx, o) {
+  if (o.type === 'trooper') {
+    ctx.fillStyle = '#fff'; ctx.fillRect(o.x, o.y, 20, 30); 
+    ctx.fillStyle = '#000'; ctx.fillRect(o.x + 4, o.y + 4, 12, 6); ctx.fillRect(o.x - 4, o.y + 12, 10, 4); 
+  } else {
+    ctx.fillStyle = '#666'; ctx.fillRect(o.x, o.y, 6, 24); ctx.fillRect(o.x + 24, o.y, 6, 24); 
+    ctx.fillStyle = '#444'; ctx.fillRect(o.x + 6, o.y + 8, 18, 8); 
+    ctx.fillStyle = '#000'; ctx.fillRect(o.x + 10, o.y + 6, 10, 12); 
+  }
+}
+
+function gameLoop() {
+  if (!gameRunning) return;
+
+  mainCtx.fillStyle = '#05050a'; mainCtx.fillRect(0, 0, W, H);
+  mainCtx.fillStyle = '#fff';
+  stars.forEach(star => {
+    star.x -= star.speed + (speed * 0.2);
+    if (star.x < 0) star.x = W;
+    mainCtx.fillRect(star.x, star.y, star.size, star.size);
+  });
+
+  mainCtx.fillStyle = '#2a2a2a'; mainCtx.fillRect(0, groundY + 46, W, H);
+  mainCtx.fillStyle = '#0f0'; mainCtx.fillRect(0, groundY + 46, W, 2);
+
+  player.dy += gravity;
+  player.y += player.dy;
+
+  if (player.y >= groundY) { player.y = groundY; player.dy = 0; player.jumping = false; }
+
+  let isRunning = !player.jumping && gameRunning;
+  drawPlayer(mainCtx, currentChar, player.x, player.y, isRunning);
+
+  frame++;
+
+  if (frame % Math.max(40, 100 - Math.floor(speed * 3)) === 0) {
+    if (Math.random() > 0.4) { obstacles.push({ x: W, y: groundY + 16, width: 20, height: 30, type: 'trooper' }); } 
+    else { obstacles.push({ x: W, y: groundY - 30, width: 30, height: 24, type: 'tie' }); }
+  }
+
+  if (frame % 90 === 0 && Math.random() > 0.3) {
+    let laserHeight = Math.random() > 0.5 ? groundY + 20 : groundY - 10;
+    lasers.push({ x: W, y: laserHeight, width: 20, height: 4 });
+  }
+
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    let o = obstacles[i];
+    o.x -= speed;
+    drawObstacle(mainCtx, o);
+
+    if (player.x + 30 > o.x && player.x + 10 < o.x + o.width && player.y + 40 > o.y && player.y + 10 < o.y + o.height) { endGame(); }
+    if (o.x < -50) obstacles.splice(i, 1);
+  }
+
+  mainCtx.shadowBlur = 8; mainCtx.shadowColor = '#f00'; mainCtx.fillStyle = '#f00';
+  for (let i = lasers.length - 1; i >= 0; i--) {
+    let l = lasers[i];
+    l.x -= speed * 1.8; 
+    mainCtx.fillRect(l.x, l.y, l.width, l.height);
+
+    if (player.x + 25 > l.x && player.x + 15 < l.x + l.width && player.y + 35 > l.y && player.y + 15 < l.y + l.height) { endGame(); }
+    if (l.x < -50) lasers.splice(i, 1);
+  }
+  mainCtx.shadowBlur = 0;
+
+  score++;
+  mainCtx.fillStyle = '#fff'; mainCtx.font = 'bold 22px Courier New';
+  mainCtx.fillText('SCORE: ' + Math.floor(score / 5), 20, 35);
+
+  if (score % 500 === 0) speed = Math.min(speed + 0.5, 12);
+  if (gameRunning) requestAnimationFrame(gameLoop);
+}
+
+function jump() {
+  if (!player.jumping && gameRunning) { player.dy = jumpPower; player.jumping = true; }
+}
+
+function startGame() {
+  document.getElementById('menu').style.display = 'none';
+  document.getElementById('gameOver').style.display = 'none';
+  gameRunning = true;
+  score = 0; speed = 5; obstacles = []; lasers = []; frame = 0;
+  player.y = groundY; player.dy = 0; player.jumping = false;
+  gameLoop();
+}
+
+function endGame() {
+  gameRunning = false;
+  let finalScoreCalc = Math.floor(score / 5);
+  
+  // High Score Logic
+  if (finalScoreCalc > highScore) {
+    highScore = finalScoreCalc;
+    localStorage.setItem('swRunnerHighScore', highScore);
+  }
+  
+  document.getElementById('finalScore').innerHTML = `FINAL SCORE: ${finalScoreCalc}`;
+  document.getElementById('gameOverHighScore').innerHTML = `HIGH SCORE: ${highScore}`;
+  document.getElementById('gameOver').style.display = 'flex';
+}
+
+function restartGame() {
+  startGame();
+}
+
+function goHome() {
+  document.getElementById('gameOver').style.display = 'none';
+  document.getElementById('menuHighScore').innerText = 'HIGH SCORE: ' + highScore;
+  document.getElementById('menu').style.display = 'flex';
+  mainCtx.fillStyle = '#05050a'; mainCtx.fillRect(0,0,W,H); // clear canvas
+}
+
+function createCharacterMenu() {
+  const container = document.getElementById('charSelect');
+  container.innerHTML = '';
+  
+  heroes.forEach((hero, i) => {
+    const div = document.createElement('div');
+    div.className = 'char' + (i === 0 ? ' selected' : '');
+    
+    const miniCanvas = document.createElement('canvas');
+    miniCanvas.width = 70; miniCanvas.height = 70;
+    drawPlayer(miniCanvas.getContext('2d'), i, 15, 12, false); 
+    
+    const label = document.createElement('div');
+    label.textContent = hero.name;
+    label.style.marginTop = '5px'; label.style.fontWeight = 'bold';
+    
+    div.appendChild(miniCanvas); div.appendChild(label);
+    
+    div.onclick = () => {
+      document.querySelectorAll('.char').forEach(c => c.classList.remove('selected'));
+      div.classList.add('selected');
+      currentChar = i;
+    };
+    container.appendChild(div);
+  });
+}
+
+document.addEventListener('keydown', e => {
+  if ((e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w') && gameRunning) {
+    e.preventDefault(); jump();
+  }
+});
+canvas.addEventListener('mousedown', jump);
+canvas.addEventListener('touchstart', e => { e.preventDefault(); jump(); });
+
+createCharacterMenu();
+mainCtx.fillStyle = '#05050a'; mainCtx.fillRect(0,0,W,H);
+</script>
+</body>
+</html>
